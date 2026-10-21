@@ -6,6 +6,12 @@
 	objectVersion = 90;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		000000000000000000000201 /* TutorCore in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000301 /* TutorCore */; };
+		000000000000000000000202 /* TutorEngines in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000302 /* TutorEngines */; };
+		000000000000000000000203 /* TutorAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000303 /* TutorAudio */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* AgenticTutor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AgenticTutor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -22,6 +28,9 @@
 		000000000000000130000000 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				000000000000000000000201 /* TutorCore in Frameworks */,
+				000000000000000000000202 /* TutorEngines in Frameworks */,
+				000000000000000000000203 /* TutorAudio in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -60,6 +69,11 @@
 				000000000000000000000010 /* AgenticTutor */,
 			);
 			name = AgenticTutor;
+			packageProductDependencies = (
+				000000000000000000000301 /* TutorCore */,
+				000000000000000000000302 /* TutorEngines */,
+				000000000000000000000303 /* TutorAudio */,
+			);
 			productName = MyApp;
 			productReference = 000000000000000000000120 /* AgenticTutor.app */;
 			productType = "com.apple.product-type.application";
@@ -92,6 +106,9 @@
 			productRefGroup = 000000000000000000000020 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
+			packageReferences = (
+				000000000000000000000401 /* XCLocalSwiftPackageReference "TutorKit" */,
+			);
 			targets = (
 				000000000000000100000000 /* AgenticTutor */,
 			);
@@ -113,6 +130,31 @@
 			);
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		000000000000000000000401 /* XCLocalSwiftPackageReference "TutorKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = TutorKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		000000000000000000000301 /* TutorCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000000000401 /* XCLocalSwiftPackageReference "TutorKit" */;
+			productName = TutorCore;
+		};
+		000000000000000000000302 /* TutorEngines */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000000000401 /* XCLocalSwiftPackageReference "TutorKit" */;
+			productName = TutorEngines;
+		};
+		000000000000000000000303 /* TutorAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000000000401 /* XCLocalSwiftPackageReference "TutorKit" */;
+			productName = TutorAudio;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		000000000000000011000000 /* Debug configuration for PBXProject "AgenticTutor" */ = {
@@ -250,12 +292,14 @@
 		000000000000000111000000 /* Debug configuration for PBXNativeTarget "AgenticTutor" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = AgenticTutor/AgenticTutor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "The tutor listens to your voice so you can talk through math out loud. Audio never leaves this Mac.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -274,7 +318,7 @@
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -287,12 +331,14 @@
 		000000000000000112000000 /* Release configuration for PBXNativeTarget "AgenticTutor" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = AgenticTutor/AgenticTutor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "The tutor listens to your voice so you can talk through math out loud. Audio never leaves this Mac.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -311,7 +357,7 @@
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
