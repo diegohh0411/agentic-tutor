@@ -16,6 +16,7 @@ public struct TurnConfig: Sendable {
 
 public enum TurnInput: Sendable {
     case vad(Float, at: TimeInterval)
+    /// A Smart Turn verdict answering the `.checkTurn` emitted at the same timestamp.
     case verdict(Float, at: TimeInterval)
     case asrWords(at: TimeInterval)
     case hold(Bool, at: TimeInterval)
@@ -52,8 +53,9 @@ public struct TurnTaker {
     private var lastSpeechEnd: TimeInterval?
     private var silenceDuration: TimeInterval = 0
     private var lastCheckSilenceDuration: TimeInterval?
-    private var speechGeneration = 0
-    private var lastCheckSpeechGeneration: Int?
+    private var lastCheckTime: TimeInterval?
+    private var receivedSpeechSinceLastCheck = false
+    private var processedVerdictForLastCheck = false
     private var consecutiveCompleteVerdicts = 0
 
     private var duckIsActive = false
@@ -81,6 +83,9 @@ public struct TurnTaker {
                 lastSpeechEnd = time
                 silenceDuration = 0
                 lastCheckSilenceDuration = nil
+                lastCheckTime = nil
+                receivedSpeechSinceLastCheck = false
+                processedVerdictForLastCheck = false
                 consecutiveCompleteVerdicts = 0
             }
             return []
@@ -113,7 +118,7 @@ public struct TurnTaker {
         lastSpeechEnd = time + Self.chunkDuration
         silenceDuration = 0
         lastCheckSilenceDuration = nil
-        speechGeneration &+= 1
+        receivedSpeechSinceLastCheck = true
         consecutiveCompleteVerdicts = 0
 
         var output: [TurnOutput] = []
@@ -164,17 +169,22 @@ public struct TurnTaker {
         }
 
         lastCheckSilenceDuration = silenceDuration
-        lastCheckSpeechGeneration = speechGeneration
+        lastCheckTime = time
+        receivedSpeechSinceLastCheck = false
+        processedVerdictForLastCheck = false
         return [.checkTurn(at: time)]
     }
 
     private mutating func processVerdict(_ probability: Float, at time: TimeInterval) -> [TurnOutput] {
         guard hasOpenTurn, !isHolding, (!tutorIsSpeaking || wasBargeIn) else { return [] }
-        // A Smart Turn result is only valid for the pause that produced its check.
-        // Preserve support for integrations that deliver a first verdict before a
-        // check, but once a check has been emitted speech must be followed by a
-        // fresh check before another verdict can count.
-        guard lastCheckSpeechGeneration.map({ $0 == speechGeneration }) ?? true else { return [] }
+        // A Smart Turn result is only valid for the most recently emitted check.
+        guard let lastCheckTime,
+              abs(time - lastCheckTime) <= 1e-9,
+              !receivedSpeechSinceLastCheck,
+              !processedVerdictForLastCheck else {
+            return []
+        }
+        processedVerdictForLastCheck = true
 
         if probability >= config.completeThreshold {
             consecutiveCompleteVerdicts += 1
@@ -199,7 +209,9 @@ public struct TurnTaker {
         wasBargeIn = bargeIn
         silenceDuration = 0
         lastCheckSilenceDuration = nil
-        lastCheckSpeechGeneration = nil
+        lastCheckTime = nil
+        receivedSpeechSinceLastCheck = false
+        processedVerdictForLastCheck = false
         consecutiveCompleteVerdicts = 0
     }
 
@@ -217,6 +229,9 @@ public struct TurnTaker {
         lastSpeechEnd = nil
         silenceDuration = 0
         lastCheckSilenceDuration = nil
+        lastCheckTime = nil
+        receivedSpeechSinceLastCheck = false
+        processedVerdictForLastCheck = false
         consecutiveCompleteVerdicts = 0
         return [output]
     }
