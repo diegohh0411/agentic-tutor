@@ -5,10 +5,12 @@ import Testing
 @Test func spanishAndEnglishSamples() async throws {
     let models = try phononModelsDirectory()
     let speaker = try await PhononSpeaker.load(bundledModels: models)
-    let taggedVoices = speaker.voices.compactMap { voice in
-        voiceLanguage(voice).map { (voice, $0) }
-    }
-    let voices = try #require(taggedVoices.isEmpty ? nil : taggedVoices)
+    let voices: [(voice: String, language: ProbeLanguage)] = [
+        (ModelCatalog.phononVoiceEnglish, .english),
+        (ModelCatalog.phononVoiceSpanish, .spanish),
+    ]
+    #expect(speaker.voices.contains(ModelCatalog.phononVoiceEnglish))
+    #expect(speaker.voices.contains(ModelCatalog.phononVoiceSpanish))
 
     let audioDirectory = repositoryRoot()
         .appendingPathComponent("spike-audio", isDirectory: true)
@@ -63,13 +65,6 @@ private func repositoryRoot() -> URL {
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-}
-
-private func voiceLanguage(_ voice: String) -> ProbeLanguage? {
-    let tags = voice.lowercased().split(whereSeparator: { !$0.isLetter })
-    if tags.contains(where: { $0 == "en" }) { return .english }
-    if tags.contains(where: { $0 == "es" }) { return .spanish }
-    return nil
 }
 
 private func sentence(for language: ProbeLanguage) -> String {

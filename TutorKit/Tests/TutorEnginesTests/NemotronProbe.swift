@@ -25,7 +25,7 @@ struct NemotronProbe {
                     recording: line.recordingName,
                     reference: line.text,
                     transcript: transcript,
-                    wer: asrProbeWER(reference: line.text, hypothesis: transcript)
+                    wer: asrProbeWER(reference: line.text, hypothesis: transcript, language: language)
                 ))
             }
         }
@@ -34,16 +34,23 @@ struct NemotronProbe {
 
         for language in TutorLanguage.allCases {
             let languageResults = results.filter { $0.language == language }
+            try #require(!languageResults.isEmpty)
             let meanWER = languageResults.map(\.wer).reduce(0, +) / Double(languageResults.count)
             #expect(meanWER < 0.15)
 
             for term in Set(NemotronTranscriber.mathVocabulary[language] ?? []) {
                 let referencesContainingTerm = languageResults.filter {
-                    asrProbeContains(asrProbeWords(term), in: asrProbeWords($0.reference))
+                    asrProbeContains(
+                        asrProbeWords(term, language: language),
+                        in: asrProbeWords($0.reference, language: language)
+                    )
                 }
                 guard !referencesContainingTerm.isEmpty else { continue }
                 let recognized = referencesContainingTerm.filter {
-                    asrProbeContains(asrProbeWords(term), in: asrProbeWords($0.transcript))
+                    asrProbeContains(
+                        asrProbeWords(term, language: language),
+                        in: asrProbeWords($0.transcript, language: language)
+                    )
                 }.count
                 let recall = Double(recognized) / Double(referencesContainingTerm.count)
                 #expect(recall >= 0.8)
@@ -164,17 +171,22 @@ private func asrProbeDecode16kMono(_ url: URL) throws -> [Float] {
     return Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength)))
 }
 
-private func asrProbeWords(_ text: String) -> [String] {
+private func asrProbeWords(_ text: String, language: TutorLanguage) -> [String] {
     let normalized = text.precomposedStringWithCanonicalMapping.lowercased()
     let separators = normalized.unicodeScalars.map { scalar -> Character in
         CharacterSet.letters.contains(scalar) || CharacterSet.decimalDigits.contains(scalar) ? Character(String(scalar)) : " "
     }
-    return String(separators).split(whereSeparator: \.isWhitespace).map(String.init)
+    return String(separators).split(whereSeparator: \.isWhitespace).flatMap { token in
+        if let number = Int(String(token)), (0...100).contains(number) {
+            return asrProbeNumberWords(number, language: language)
+        }
+        return [String(token)]
+    }
 }
 
-private func asrProbeWER(reference: String, hypothesis: String) -> Double {
-    let referenceWords = asrProbeWords(reference)
-    let hypothesisWords = asrProbeWords(hypothesis)
+private func asrProbeWER(reference: String, hypothesis: String, language: TutorLanguage) -> Double {
+    let referenceWords = asrProbeWords(reference, language: language)
+    let hypothesisWords = asrProbeWords(hypothesis, language: language)
     guard !referenceWords.isEmpty else { return 0 }
 
     var prior = Array(0...hypothesisWords.count)
@@ -189,6 +201,40 @@ private func asrProbeWER(reference: String, hypothesis: String) -> Double {
         prior = current
     }
     return Double(prior[hypothesisWords.count]) / Double(referenceWords.count)
+}
+
+private func asrProbeNumberWords(_ number: Int, language: TutorLanguage) -> [String] {
+    switch language {
+    case .english:
+        let underTwenty = [
+            "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+            "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+            "eighteen", "nineteen",
+        ]
+        let tens = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
+        if number < 20 { return [underTwenty[number]] }
+        if number == 100 { return ["one", "hundred"] }
+        let tensDigit = number / 10
+        let ones = number % 10
+        return ones == 0 ? [tens[tensDigit]] : [tens[tensDigit], underTwenty[ones]]
+    case .spanish:
+        let underSixteen = [
+            "cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve",
+            "diez", "once", "doce", "trece", "catorce", "quince",
+        ]
+        let special = [
+            16: ["dieciséis"], 17: ["diecisiete"], 18: ["dieciocho"], 19: ["diecinueve"],
+            20: ["veinte"], 21: ["veintiuno"], 22: ["veintidós"], 23: ["veintitrés"], 24: ["veinticuatro"],
+            25: ["veinticinco"], 26: ["veintiséis"], 27: ["veintisiete"], 28: ["veintiocho"], 29: ["veintinueve"],
+            100: ["cien"],
+        ]
+        if number < 16 { return [underSixteen[number]] }
+        if let words = special[number] { return words }
+        let tens = [3: "treinta", 4: "cuarenta", 5: "cincuenta", 6: "sesenta", 7: "setenta", 8: "ochenta", 9: "noventa"]
+        let tensWord = tens[number / 10]!
+        let ones = number % 10
+        return ones == 0 ? [tensWord] : [tensWord, "y", underSixteen[ones]]
+    }
 }
 
 private func asrProbeContains(_ phrase: [String], in words: [String]) -> Bool {
@@ -212,6 +258,7 @@ private func asrProbeAppendResults(_ results: [ASRProbeResult]) throws {
     }
     for language in TutorLanguage.allCases {
         let languageResults = results.filter { $0.language == language }
+        guard !languageResults.isEmpty else { continue }
         let meanWER = languageResults.map(\.wer).reduce(0, +) / Double(languageResults.count)
         table += "\nMean \(language.rawValue) WER: \(String(format: "%.3f", meanWER)).\n"
         if language == .spanish, meanWER >= 0.15 {

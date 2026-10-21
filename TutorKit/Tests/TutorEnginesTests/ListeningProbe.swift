@@ -26,19 +26,47 @@ struct ListeningProbe {
         let startedAt = ContinuousClock.now
         let completeProbability = try judge.completionProbability(turnAudio: audio)
         let elapsed = startedAt.duration(to: .now)
-        let cutOff = Array(audio.prefix(Int(Double(audio.count) * 0.4)))
-        let cutOffProbability = try judge.completionProbability(turnAudio: cutOff)
-
         #expect(completeProbability > 0.5)
-        #expect(cutOffProbability < 0.5)
-
-        try listeningAppendSmartTurnResult(
+        var results = [SmartTurnProbeResult(
+            recording: "en-01",
             completeProbability: completeProbability,
-            cutOffProbability: cutOffProbability,
+            prePauseProbability: nil,
             inferenceMilliseconds: Double(elapsed.components.attoseconds) / 1e15
                 + Double(elapsed.components.seconds) * 1_000
-        )
+        )]
+
+        for prefix in ["en", "es"] {
+            for line in 8...10 {
+                let recording = String(format: "%@-%02d", prefix, line)
+                let clip = try listeningLoad16kMonoAudio(named: recording)
+                let silenceStart = try #require(listeningFirstSilenceStart(in: clip))
+                let prePauseCount = min(clip.count, silenceStart + Int(0.3 * 16_000))
+                let prePause = Array(clip.prefix(prePauseCount))
+                let fullProbability = try judge.completionProbability(turnAudio: clip)
+                let prePauseProbability = try judge.completionProbability(turnAudio: prePause)
+                results.append(SmartTurnProbeResult(
+                    recording: recording,
+                    completeProbability: fullProbability,
+                    prePauseProbability: prePauseProbability,
+                    inferenceMilliseconds: nil
+                ))
+            }
+        }
+
+        let naturalPauseResults = results.dropFirst()
+        #expect(naturalPauseResults.filter {
+            $0.completeProbability >= 0.5 && ($0.prePauseProbability ?? 1) < 0.5
+        }.count >= 4)
+
+        try listeningAppendSmartTurnResults(results)
     }
+}
+
+private struct SmartTurnProbeResult {
+    let recording: String
+    let completeProbability: Float
+    let prePauseProbability: Float?
+    let inferenceMilliseconds: Double?
 }
 
 private func listeningChunks(from samples: [Float]) -> [[Float]] {
@@ -107,21 +135,43 @@ private func listeningDecode16kMono(_ url: URL) throws -> [Float] {
     return Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength)))
 }
 
-private func listeningAppendSmartTurnResult(
-    completeProbability: Float,
-    cutOffProbability: Float,
-    inferenceMilliseconds: Double
-) throws {
-    let results = listeningRepositoryRoot().appendingPathComponent("docs/spike/results.md")
+private func listeningFirstSilenceStart(in samples: [Float]) -> Int? {
+    let windowSize = 160 // 10 ms at the probe's 16 kHz sample rate.
+    let requiredWindows = 100 // Detect a continuous silent run of at least 1.0 s.
+    let rmsThreshold: Float = 0.005
+    var runStart: Int?
+    var runLength = 0
+
+    for start in stride(from: 0, to: samples.count - windowSize + 1, by: windowSize) {
+        let window = samples[start..<(start + windowSize)]
+        let meanSquare = window.reduce(Float.zero) { $0 + $1 * $1 } / Float(windowSize)
+        if meanSquare.squareRoot() < rmsThreshold {
+            if runStart == nil { runStart = start }
+            runLength += 1
+            if runLength >= requiredWindows { return runStart }
+        } else {
+            runStart = nil
+            runLength = 0
+        }
+    }
+    return nil
+}
+
+private func listeningAppendSmartTurnResults(_ results: [SmartTurnProbeResult]) throws {
+    let resultsURL = listeningRepositoryRoot().appendingPathComponent("docs/spike/results.md")
     let table = """
 
     ## Smart Turn probe
 
-    | Recording | Complete probability | 40% cutoff probability | Inference |
+    | Recording | Complete probability | Pre-pause probability | Inference |
     | --- | ---: | ---: | ---: |
-    | en-01 | \(String(format: "%.3f", completeProbability)) | \(String(format: "%.3f", cutOffProbability)) | \(String(format: "%.1f", inferenceMilliseconds)) ms |
     """
-    try listeningAppend(table + "\n", to: results)
+    for result in results {
+        let prePause = result.prePauseProbability.map { String(format: "%.3f", $0) } ?? "—"
+        let inference = result.inferenceMilliseconds.map { String(format: "%.1f ms", $0) } ?? "—"
+        table += "| \(result.recording) | \(String(format: "%.3f", result.completeProbability)) | \(prePause) | \(inference) |\\n"
+    }
+    try listeningAppend(table + "\n", to: resultsURL)
 }
 
 private func listeningAppend(_ text: String, to url: URL) throws {
