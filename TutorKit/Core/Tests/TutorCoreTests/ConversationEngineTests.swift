@@ -38,12 +38,13 @@ private func makeEngine(
     tutor: TutorFake,
     tts: TTSFake = TTSFake(),
     output: OutputFake = OutputFake(),
+    judge: JudgeFake = JudgeFake(),
     setting: TutorLanguage = .english,
     clock: TestClock = TestClock()
 ) -> ConversationEngine {
     ConversationEngine(
         vad: vad,
-        judge: JudgeFake(),
+        judge: judge,
         asr: asr,
         tutor: tutor,
         tts: tts,
@@ -75,6 +76,13 @@ private func submitFinishedVoiceTurn(to engine: ConversationEngine, at start: Ti
     await submitFinishedVoiceTurn(to: engine, at: 0)
 
     #expect(await eventually { tts.texts == ["Look:", "That is three quarters of it."] })
+    #expect(await eventually {
+        let states = await events.snapshot().compactMap { event -> ConversationState? in
+            guard case let .state(state) = event else { return nil }
+            return state
+        }
+        return states == [.listening, .thinking, .speaking, .listening]
+    })
     let recorded = await events.snapshot()
     #expect(recorded.contains(.action(.show("3/4"))))
     #expect(recorded.compactMap { event -> ConversationState? in
@@ -152,14 +160,117 @@ private func submitFinishedVoiceTurn(to engine: ConversationEngine, at start: Ti
 @Test func historyIsCappedAtTwelveTurns() async {
     let tutor = TutorFake(scripts: Array(repeating: ["This response is long enough."], count: 10))
     let engine = makeEngine(vad: VADFake(probabilities: []), asr: ASRFake(texts: []), tutor: tutor)
+    let events = EventLog()
+    let collector = collectEvents(from: engine, into: events)
+    defer { collector.cancel() }
     await engine.start()
 
     for turn in 1 ... 10 {
         await engine.submitTyped("question \(turn)")
         #expect(await eventually { tutor.calls.count == turn })
+        #expect(await eventually {
+            let states = await events.snapshot().compactMap { event -> ConversationState? in
+                guard case let .state(state) = event else { return nil }
+                return state
+            }
+            return states.filter { $0 == .listening }.count == turn + 1
+        })
     }
 
-    #expect(tutor.calls.allSatisfy { $0.history.count <= 12 })
+    let expected = [
+        ChatTurn(role: .tutor, text: "This response is long enough."),
+        ChatTurn(role: .user, text: "question 5"),
+        ChatTurn(role: .tutor, text: "This response is long enough."),
+        ChatTurn(role: .user, text: "question 6"),
+        ChatTurn(role: .tutor, text: "This response is long enough."),
+        ChatTurn(role: .user, text: "question 7"),
+        ChatTurn(role: .tutor, text: "This response is long enough."),
+        ChatTurn(role: .user, text: "question 8"),
+        ChatTurn(role: .tutor, text: "This response is long enough."),
+        ChatTurn(role: .user, text: "question 9"),
+        ChatTurn(role: .tutor, text: "This response is long enough."),
+        ChatTurn(role: .user, text: "question 10"),
+    ]
+    #expect(tutor.calls.last?.history == expected)
+}
+
+@Test func smartTurnAudioHasNoDuplicatedPreRoll() async {
+    let first = [Float](repeating: 1, count: 512)
+    let second = [Float](repeating: 2, count: 512)
+    let judge = JudgeFake()
+    let engine = makeEngine(
+        vad: VADFake(probabilities: [0.9, 0.9, 0]),
+        asr: ASRFake(texts: ["done"]),
+        tutor: TutorFake(scripts: [[]]),
+        judge: judge
+    )
+    await engine.start()
+
+    await engine.ingest(micChunk16k: first, at: 0)
+    await engine.ingest(micChunk16k: second, at: 0.032)
+    await engine.ingest(micChunk16k: frame, at: 0.064)
+
+    #expect(await eventually { !judge.turnAudios.isEmpty })
+    let actualTurnAudio = first + second + frame
+    #expect(judge.turnAudios.first?.count == actualTurnAudio.count)
+    #expect(judge.turnAudios.first == actualTurnAudio)
+}
+
+@Test func asrErrorResetsSession() async {
+    let asr = ASRFake(texts: [], throwOnFirstPush: true)
+    let engine = makeEngine(
+        vad: VADFake(probabilities: [0.9, 0.9, 0.9, 0.9]),
+        asr: asr,
+        tutor: TutorFake(scripts: [])
+    )
+    let events = EventLog()
+    let collector = collectEvents(from: engine, into: events)
+    defer { collector.cancel() }
+    await engine.start()
+
+    await engine.ingest(micChunk16k: frame, at: 0)
+    await engine.ingest(micChunk16k: frame, at: 0.032)
+    #expect(await eventually { asr.begins == 1 })
+    #expect(await eventually {
+        let recorded = await events.snapshot()
+        return recorded.contains { if case .error = $0 { return true }; return false }
+            && recorded.last == .state(.listening)
+    })
+    let failedSessionPushes = asr.pushesPerSession[0]
+
+    await engine.ingest(micChunk16k: frame, at: 1)
+    await engine.ingest(micChunk16k: frame, at: 1.032)
+
+    #expect(await eventually { asr.begins == 2 })
+    #expect(asr.pushesPerSession[0] == failedSessionPushes)
+    #expect(asr.pushesPerSession[1] == [512, 512])
+}
+
+@Test func waitsForPlaybackBeforeListening() async {
+    let output = OutputFake(playbackDuration: 0.15)
+    let tutor = TutorFake(scripts: [["Playback is still draining."]])
+    let engine = makeEngine(vad: VADFake(probabilities: []), asr: ASRFake(texts: []), tutor: tutor, output: output)
+    let events = EventLog()
+    let collector = collectEvents(from: engine, into: events)
+    defer { collector.cancel() }
+    await engine.start()
+    await engine.submitTyped("test playback")
+
+    #expect(await eventually { output.isPlaying })
+    try? await Task.sleep(for: .milliseconds(75))
+    let earlyStates = await events.snapshot().compactMap { event -> ConversationState? in
+        guard case let .state(state) = event else { return nil }
+        return state
+    }
+    #expect(earlyStates == [.listening, .thinking, .speaking])
+
+    #expect(await eventually {
+        let states = await events.snapshot().compactMap { event -> ConversationState? in
+            guard case let .state(state) = event else { return nil }
+            return state
+        }
+        return !output.isPlaying && states == [.listening, .thinking, .speaking, .listening]
+    })
 }
 
 @Test func spanishTurnSwitchesVoice() async {

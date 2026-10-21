@@ -19,27 +19,52 @@ final class VADFake: VoiceActivityDetecting {
 }
 
 final class JudgeFake: TurnCompletionJudging {
+    private let lock = NSLock()
     var probability: Float
+    private var audioLog: [[Float]] = []
 
     init(probability: Float = 1) { self.probability = probability }
 
-    func completionProbability(turnAudio _: [Float]) throws -> Float { probability }
+    var turnAudios: [[Float]] { lock.withLock { audioLog } }
+
+    func completionProbability(turnAudio: [Float]) throws -> Float {
+        lock.withLock { audioLog.append(turnAudio) }
+        return probability
+    }
 }
 
 final class ASRFake: StreamingTranscribing {
     private let lock = NSLock()
     private var texts: [String]
     private let partialText: String
+    private var beginCount = 0
+    private var pushesBySession: [[Int]] = []
+    private var shouldThrowOnPush: Bool
 
-    init(texts: [String], partialText: String = "words") {
+    init(texts: [String], partialText: String = "words", throwOnFirstPush: Bool = false) {
         self.texts = texts
         self.partialText = partialText
+        shouldThrowOnPush = throwOnFirstPush
     }
 
-    func begin(language _: TutorLanguage) throws {}
+    var begins: Int { lock.withLock { beginCount } }
+    var pushesPerSession: [[Int]] { lock.withLock { pushesBySession } }
 
-    func push(_: [Float]) throws -> TranscriptUpdate? {
-        TranscriptUpdate(text: partialText, isFinal: false)
+    func begin(language _: TutorLanguage) throws {
+        lock.withLock {
+            beginCount += 1
+            pushesBySession.append([])
+        }
+    }
+
+    func push(_ samples: [Float]) throws -> TranscriptUpdate? {
+        let shouldThrow = lock.withLock { () -> Bool in
+            pushesBySession[pushesBySession.count - 1].append(samples.count)
+            defer { shouldThrowOnPush = false }
+            return shouldThrowOnPush
+        }
+        if shouldThrow { throw FakeError.asr }
+        return TranscriptUpdate(text: partialText, isFinal: false)
     }
 
     func finish() throws -> String {
@@ -150,12 +175,28 @@ enum OutputCall: Equatable {
 final class OutputFake: AudioOutput {
     private let lock = NSLock()
     private var callLog: [OutputCall] = []
-    var isPlaying = false
+    private let playbackDuration: TimeInterval
+    private var playbackEndsAt: Date?
     var outputLatency: TimeInterval = 0
 
-    var calls: [OutputCall] { lock.withLock { callLog } }
+    init(playbackDuration: TimeInterval = 0) {
+        self.playbackDuration = playbackDuration
+    }
 
-    func enqueue(_ samples24k: [Float]) { lock.withLock { callLog.append(.enqueue(samples24k.count)) } }
+    var calls: [OutputCall] { lock.withLock { callLog } }
+    var isPlaying: Bool {
+        lock.withLock {
+            guard let playbackEndsAt else { return false }
+            return Date() < playbackEndsAt
+        }
+    }
+
+    func enqueue(_ samples24k: [Float]) {
+        lock.withLock {
+            callLog.append(.enqueue(samples24k.count))
+            if playbackDuration > 0 { playbackEndsAt = Date().addingTimeInterval(playbackDuration) }
+        }
+    }
     func duck() { lock.withLock { callLog.append(.duck) } }
     func unduck() { lock.withLock { callLog.append(.unduck) } }
     func stopAll() { lock.withLock { callLog.append(.stopAll) } }
@@ -177,4 +218,4 @@ actor EventLog {
     func snapshot() -> [ConversationEvent] { values }
 }
 
-enum FakeError: Error { case tutor }
+enum FakeError: Error { case tutor, asr }

@@ -151,16 +151,17 @@ public actor ConversationEngine {
         } else {
             mergePrefix = nil
         }
-        turnAudio = preRoll.flatMap { $0 }
+        turnAudio = []
         do {
             try asr.begin(language: setting)
             asrActive = true
             for chunk in preRoll { push(chunk, at: onset) }
             recorder.mark(.speechOnset, at: onset)
-        } catch { fail(error) }
+        } catch { failASR(error) }
     }
 
     private func push(_ chunk: [Float], at time: TimeInterval) {
+        guard asrActive else { return }
         turnAudio.append(contentsOf: chunk)
         do {
             guard let update = try asr.push(chunk) else { return }
@@ -169,7 +170,7 @@ public actor ConversationEngine {
                 sentDuckWords = true
                 process(turnTaker.process(.asrWords(at: time)), at: time)
             }
-        } catch { fail(error) }
+        } catch { failASR(error) }
     }
 
     private func finishASR(at time: TimeInterval, allowance: TimeInterval) {
@@ -185,7 +186,7 @@ public actor ConversationEngine {
             let combined = [mergePrefix, final].compactMap { $0 }.joined(separator: " ")
             mergePrefix = nil
             beginFinishedTurn(combined, at: time, merge: false)
-        } catch { fail(error) }
+        } catch { failASR(error) }
     }
 
     private func beginFinishedTurn(_ text: String, at time: TimeInterval, merge: Bool) {
@@ -215,7 +216,7 @@ public actor ConversationEngine {
             guard !Task.isCancelled, replyID == id else { return }
             try await speak(parser.finish(), id: id, language: language)
             guard !Task.isCancelled, replyID == id else { return }
-            finishReply(id: id)
+            await finishReply(id: id)
         } catch is CancellationError {
             return
         } catch { fail(error, id: id) }
@@ -266,17 +267,24 @@ public actor ConversationEngine {
         emit(.state(.listening)); state = .listening
     }
 
-    private func finishReply(id: UUID) {
+    private func finishReply(id: UUID) async {
         guard replyID == id else { return }
         commitTutorIfNeeded()
+        while output.isPlaying {
+            do {
+                try await Task.sleep(for: .milliseconds(50))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, replyID == id else { return }
+        }
+        guard !Task.isCancelled, replyID == id else { return }
         replyTask = nil
         replyID = nil
         emit(.metrics(recorder.close(footprint: currentFootprintBytes())))
-        if !output.isPlaying {
-            _ = turnTaker.process(.tutorSpeaking(false))
-            emit(.state(.listening))
-            state = .listening
-        }
+        _ = turnTaker.process(.tutorSpeaking(false))
+        emit(.state(.listening))
+        state = .listening
     }
 
     private func commitTutorIfNeeded() {
@@ -297,6 +305,14 @@ public actor ConversationEngine {
         if hadReply { emit(.metrics(recorder.close(footprint: currentFootprintBytes()))) }
         emit(.error(error.localizedDescription))
         emit(.state(.listening)); state = .listening
+    }
+
+    private func failASR(_ error: Error) {
+        asrActive = false
+        turnAudio.removeAll(keepingCapacity: true)
+        preRoll.removeAll(keepingCapacity: true)
+        turnTaker = TurnTaker(config: config)
+        fail(error)
     }
 
     private func emit(_ event: ConversationEvent) { continuation.yield(event) }
