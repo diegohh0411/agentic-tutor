@@ -10,10 +10,12 @@
 		000000000000000000000201 /* TutorCore in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000301 /* TutorCore */; };
 		000000000000000000000202 /* TutorEngines in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000302 /* TutorEngines */; };
 		000000000000000000000203 /* TutorAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000303 /* TutorAudio */; };
+		000000000000000000000502 /* PhononModels in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000501 /* PhononModels */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* AgenticTutor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AgenticTutor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		000000000000000000000501 /* PhononModels */ = {isa = PBXFileReference; lastKnownFileType = folder; path = AgenticTutor/PhononModels; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -40,6 +42,7 @@
 			isa = PBXGroup;
 			children = (
 				000000000000000000000010 /* AgenticTutor */,
+				000000000000000000000501 /* PhononModels */,
 				000000000000000000000020 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -119,6 +122,7 @@
 		000000000000000140000000 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
+				000000000000000000000502 /* PhononModels in Resources */,
 			);
 		};
 /* End PBXResourcesBuildPhase section */
