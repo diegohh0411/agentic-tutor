@@ -159,7 +159,7 @@ private func listeningFirstSilenceStart(in samples: [Float]) -> Int? {
 
 private func listeningAppendSmartTurnResults(_ results: [SmartTurnProbeResult]) throws {
     let resultsURL = listeningRepositoryRoot().appendingPathComponent("docs/spike/results.md")
-    let table = """
+    var table = """
 
     ## Smart Turn probe
 
