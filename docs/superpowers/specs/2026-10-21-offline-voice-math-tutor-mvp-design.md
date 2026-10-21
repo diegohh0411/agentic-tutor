@@ -243,7 +243,17 @@ Other known risks:
   stop).
 - Per-turn language selection with a fallback to the setting; no separate
   language-ID model.
-- A Hugging Face token in the download screen for the gated Phonon weights.
+- Gated Phonon weights: a dev-only script (`scripts/export-phonon.sh`, needs
+  `HF_TOKEN`) exports the Core ML bundle. The bundle ships inside the app
+  build as a gitignored folder reference. There is no token in the app UI.
+  This replaces the earlier in-app token idea, since Phonon's Swift package
+  only loads exported Core ML bundles.
+- speech-swift (soniqo, Apache-2.0) provides Silero VAD (Core ML), Smart Turn
+  v3.2 (Core ML, raw-audio input) and the Nemotron streaming ASR, in a single
+  dependency. It replaces FluidAudio and TheStage; TheStage needs an API
+  token.
+- Reply language uses Apple's `NLLanguageRecognizer` on the transcript, since
+  Nemotron does not expose the language it detected.
 - A ~12 GB working-set budget, so results carry over to 16 GB Macs.
 - GPL-3.0 as the default app license if any GPL dependency is used.
 - The builder drafts the prompt set and the owner reviews it; elementary to
