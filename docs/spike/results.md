@@ -4,7 +4,7 @@
 
 | Recording | Complete probability | Pre-pause probability | Inference |
 | --- | ---: | ---: | ---: |
-| en-01 | 0.990 | — | 7.8 ms |
+| en-01 | 0.990 | — | 8.0 ms |
 | en-08 | 0.990 | 0.990 | — |
 | en-09 | 0.988 | 0.983 | — |
 | en-10 | 0.986 | 0.984 | — |
@@ -12,8 +12,8 @@
 | es-09 | 0.990 | 0.949 | — |
 | es-10 | 0.987 | 0.979 | — |
 
-| Phonon | NbpkqMVS3CJeq2j8 | en | 0.039 s | 33.92 |
-| Phonon | Sx8m6WdXBG06zwZT | es | 0.024 s | 34.45 |
+| Phonon | NbpkqMVS3CJeq2j8 | en | 0.038 s | 32.69 |
+| Phonon | Sx8m6WdXBG06zwZT | es | 0.026 s | 34.57 |
 
 ## Nemotron ASR probe
 
