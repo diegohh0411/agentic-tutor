@@ -52,6 +52,8 @@ public struct TurnTaker {
     private var lastSpeechEnd: TimeInterval?
     private var silenceDuration: TimeInterval = 0
     private var lastCheckSilenceDuration: TimeInterval?
+    private var speechGeneration = 0
+    private var lastCheckSpeechGeneration: Int?
     private var consecutiveCompleteVerdicts = 0
 
     private var duckIsActive = false
@@ -111,6 +113,7 @@ public struct TurnTaker {
         lastSpeechEnd = time + Self.chunkDuration
         silenceDuration = 0
         lastCheckSilenceDuration = nil
+        speechGeneration &+= 1
         consecutiveCompleteVerdicts = 0
 
         var output: [TurnOutput] = []
@@ -161,11 +164,17 @@ public struct TurnTaker {
         }
 
         lastCheckSilenceDuration = silenceDuration
+        lastCheckSpeechGeneration = speechGeneration
         return [.checkTurn(at: time)]
     }
 
     private mutating func processVerdict(_ probability: Float, at time: TimeInterval) -> [TurnOutput] {
         guard hasOpenTurn, !isHolding, (!tutorIsSpeaking || wasBargeIn) else { return [] }
+        // A Smart Turn result is only valid for the pause that produced its check.
+        // Preserve support for integrations that deliver a first verdict before a
+        // check, but once a check has been emitted speech must be followed by a
+        // fresh check before another verdict can count.
+        guard lastCheckSpeechGeneration.map({ $0 == speechGeneration }) ?? true else { return [] }
 
         if probability >= config.completeThreshold {
             consecutiveCompleteVerdicts += 1
@@ -190,6 +199,7 @@ public struct TurnTaker {
         wasBargeIn = bargeIn
         silenceDuration = 0
         lastCheckSilenceDuration = nil
+        lastCheckSpeechGeneration = nil
         consecutiveCompleteVerdicts = 0
     }
 

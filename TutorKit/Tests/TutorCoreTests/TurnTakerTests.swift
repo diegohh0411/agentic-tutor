@@ -61,6 +61,52 @@ private func feed(
     })
 }
 
+@Test func staleVerdictAfterSpeechResumesIsIgnored() {
+    var turnTaker = TurnTaker()
+    _ = feed([0.9, 0.9], from: 0, into: &turnTaker)
+    let initialPause = feed(Array(repeating: 0, count: 13), from: 0.064, into: &turnTaker)
+    #expect(initialPause.contains { output in
+        guard case .checkTurn = output else { return false }
+        return true
+    })
+
+    _ = turnTaker.process(.vad(0.9, at: 0.480))
+    #expect(turnTaker.process(.verdict(0.9, at: 0.512)).isEmpty)
+
+    let resumedPause = feed(Array(repeating: 0, count: 13), from: 0.512, into: &turnTaker)
+    #expect(resumedPause.contains { output in
+        guard case .checkTurn = output else { return false }
+        return true
+    })
+    #expect(turnTaker.process(.verdict(0.9, at: 0.896)).isEmpty)
+
+    let output = turnTaker.process(.verdict(0.9, at: 0.928))
+    #expect(output.contains { output in
+        guard case let .turnEnded(_, reason, _) = output else { return false }
+        return reason == .smartTurn
+    })
+}
+
+@Test func turnEndCarriesSilenceAllowance() {
+    var turnTaker = TurnTaker()
+    _ = feed([0.9, 0.9], from: 0.936, into: &turnTaker)
+
+    _ = feed(Array(repeating: 0, count: 13), from: 1.0, into: &turnTaker)
+    #expect(turnTaker.process(.verdict(0.9, at: 1.384)).isEmpty)
+
+    _ = feed(Array(repeating: 0, count: 4), from: 1.416, into: &turnTaker)
+    let output = turnTaker.process(.verdict(0.9, at: 1.512))
+    let silenceAllowance = output.compactMap { output -> TimeInterval? in
+        guard case let .turnEnded(_, reason, allowance) = output, reason == .smartTurn else {
+            return nil
+        }
+        return allowance
+    }
+
+    #expect(silenceAllowance.count == 1)
+    #expect(abs(silenceAllowance[0] - ((1.512 + chunkDuration) - 1.0)) < 0.001)
+}
+
 @Test func holdSuppressesTurnEnd() {
     var turnTaker = TurnTaker()
     _ = feed([0.9, 0.9], from: 0, into: &turnTaker)
