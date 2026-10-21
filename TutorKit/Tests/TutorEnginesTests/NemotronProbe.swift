@@ -253,6 +253,7 @@ private func asrProbeAppendResults(_ results: [ASRProbeResult]) throws {
     | Language | Recording | WER | Reference | Transcript |
     | --- | --- | ---: | --- | --- |
     """
+    table += "\n"
     for result in results {
         table += "| \(result.language.rawValue) | \(result.recording) | \(String(format: "%.3f", result.wer)) | \(asrProbeMarkdown(result.reference)) | \(asrProbeMarkdown(result.transcript)) |\n"
     }
