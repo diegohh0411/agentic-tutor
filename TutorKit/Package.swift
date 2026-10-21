@@ -5,21 +5,25 @@ let package = Package(
     name: "TutorKit",
     platforms: [.macOS("15.0")],
     products: [
-        .library(name: "TutorCore", targets: ["TutorCore"]),
+        .library(name: "TutorCore", targets: ["TutorCoreExport"]),
         .library(name: "TutorEngines", targets: ["TutorEngines"]),
         .library(name: "TutorAudio", targets: ["TutorAudio"]),
     ],
     dependencies: [
+        .package(path: "Core"),
         .package(url: "https://github.com/soniqo/speech-swift.git", exact: "0.0.28"),
         .package(url: "https://github.com/ml-explore/mlx-swift-lm", exact: "3.31.4"),
         .package(url: "https://github.com/gradium-ai/xn-ptts.git", exact: "0.4.0"),
     ],
     targets: [
-        .target(name: "TutorCore"),
+        .target(
+            name: "TutorCoreExport",
+            dependencies: [.product(name: "TutorCore", package: "Core")]
+        ),
         .target(
             name: "TutorEngines",
             dependencies: [
-                "TutorCore",
+                .product(name: "TutorCore", package: "Core"),
                 .product(name: "SpeechVAD", package: "speech-swift"),
                 .product(name: "NemotronStreamingASR", package: "speech-swift"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
@@ -27,8 +31,7 @@ let package = Package(
                 .product(name: "ptts", package: "xn-ptts"),
             ]
         ),
-        .target(name: "TutorAudio", dependencies: ["TutorCore"]),
-        .testTarget(name: "TutorCoreTests", dependencies: ["TutorCore"]),
+        .target(name: "TutorAudio", dependencies: [.product(name: "TutorCore", package: "Core")]),
         .testTarget(
             name: "TutorEnginesTests",
             dependencies: ["TutorEngines"],
