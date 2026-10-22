@@ -96,3 +96,21 @@ Model mlx-community/Qwen3.5-4B-4bit, temperature 0.6, max 300 tokens, thinking d
 | es | ¿Me ayudas a hacer una secuencia que sume cinco cada vez? | 0.225 s | 26.41 |
 
 Median TTFT 0.207 s; median tokens/s 32.72.
+| Phonon | NbpkqMVS3CJeq2j8 | en | 0.007 s | 34.39 |
+| Phonon | Sx8m6WdXBG06zwZT | es | 0.006 s | 35.82 |
+
+## Echo self-test (spike item 5)
+
+Built-in speakers, no headphones, voice processing on, MacBook Pro M4 Max. Probe phrase: "This is a short echo test. One, two, three." (3.5 s) played through `AudioIO`; Silero VAD chunks (32 ms) above 0.5 are counted while it plays. Leak rule: 3 or more chunks.
+
+| Run | Ambient baseline (silent playback) | While probe plays | Result |
+| --- | ---: | ---: | --- |
+| 1 | 0 / 109 | 4 / 109 | leaks |
+| 2 | 0 / 112 | 0 / 109 | clean |
+| 3 | 0 / 109 | 4 / 112 | leaks |
+
+Two earlier runs in a room with background speech gave baselines of 55 to 68 chunks, so they say nothing about echo.
+
+Verdict: marginal. Echo cancellation removes most of the playback but a few chunks still reach the VAD in two of three quiet runs, so the 3-chunk rule trips by one chunk. Under the plan, the headphones banner can show on first start; it is advisory and the conversation still starts. `duck()` takes effect in about 0.03 ms (limit 10 ms). Outstanding: re-run in the owner's real room, and consider raising the leak threshold (for example to 6 chunks) if the banner shows too often with no audible echo.
+
+Environment notes: the engine fails to initialize with voice processing on unless the mixer-to-output connection uses the output node's own format (fixed in `AudioIO`). Starting a voice-processing session straight after another one ended sometimes leaves the output silent (HAL start error 35); an app runs one long session, so this only affects back-to-back probe runs.

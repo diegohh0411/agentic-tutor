@@ -39,7 +39,7 @@ let package = Package(
         .target(name: "TutorAudio", dependencies: [.product(name: "TutorCore", package: "Core")]),
         .testTarget(
             name: "TutorEnginesTests",
-            dependencies: ["TutorEngines"],
+            dependencies: ["TutorEngines", "TutorAudio"],
             resources: [.copy("../Fixtures")]
         ),
     ],
