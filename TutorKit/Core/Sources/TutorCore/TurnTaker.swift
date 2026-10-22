@@ -98,7 +98,13 @@ public struct TurnTaker {
 
     private mutating func processVAD(_ probability: Float, at time: TimeInterval) -> [TurnOutput] {
         let isSpeech = probability >= config.vadThreshold
-        let isContiguous = previousVADTime.map { abs(time - $0 - Self.chunkDuration) < 0.000_001 } ?? true
+        // Capture callbacks have scheduling jitter and may deliver several frames together.
+        // A sub-microsecond equality check resets onset on virtually every live frame.
+        // Still break the run after a real gap or a clock discontinuity.
+        let isContiguous = previousVADTime.map {
+            let elapsed = time - $0
+            return elapsed >= 0 && elapsed <= 2 * Self.chunkDuration
+        } ?? true
         previousVADTime = time
 
         guard isSpeech else {

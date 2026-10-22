@@ -91,6 +91,40 @@ private func submitFinishedVoiceTurn(to engine: ConversationEngine, at start: Ti
     } == [.listening, .thinking, .speaking, .listening])
 }
 
+@Test func liveCallbackJitterStillReachesTranscriptionAndReply() async {
+    let asr = ASRFake(texts: ["what is two plus two"])
+    let tutor = TutorFake(scripts: [["Two plus two is four."]])
+    let tts = TTSFake()
+    let engine = makeEngine(
+        vad: VADFake(probabilities: [0.9, 0.9, 0, 0]),
+        asr: asr, tutor: tutor, tts: tts
+    )
+    await engine.start()
+    for time in [100.0, 100.0335, 100.065, 100.098] {
+        await engine.ingest(micChunk16k: frame, at: time)
+    }
+    #expect(asr.begins == 1)
+    #expect(await eventually { tts.texts == ["Two plus two is four."] })
+}
+
+@Test func restartingDuringSpeechAllowsANewVoiceTurn() async {
+    let asr = ASRFake(texts: ["new question"])
+    let tutor = TutorFake(scripts: [["Here is the answer."]])
+    let engine = makeEngine(
+        vad: VADFake(probabilities: [0.9, 0.9, 0.9, 0.9, 0, 0]),
+        asr: asr, tutor: tutor
+    )
+    await engine.start()
+    await engine.ingest(micChunk16k: frame, at: 0)
+    await engine.ingest(micChunk16k: frame, at: 0.032)
+    #expect(asr.begins == 1)
+    await engine.stop()
+    await engine.start()
+    await submitFinishedVoiceTurn(to: engine, at: 10)
+    #expect(asr.begins == 2)
+    #expect(await eventually { tutor.calls.count == 1 })
+}
+
 @Test func bargeInStopsAndCancels() async {
     let vad = VADFake(probabilities: Array(repeating: 0.9, count: 13))
     let asr = ASRFake(texts: [])

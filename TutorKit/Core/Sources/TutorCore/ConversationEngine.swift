@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 public enum ConversationEvent: Sendable, Equatable {
     case state(ConversationState)
@@ -10,6 +11,7 @@ public enum ConversationEvent: Sendable, Equatable {
 }
 
 public actor ConversationEngine {
+    private static let log = Logger(subsystem: "AgenticTutor", category: "conversation")
     public nonisolated let events: AsyncStream<ConversationEvent>
     private let continuation: AsyncStream<ConversationEvent>.Continuation
     private let vad: VoiceActivityDetecting
@@ -42,6 +44,9 @@ public actor ConversationEngine {
     private var enqueuedSpeech: [String] = []
     private var markedTTSFirstChunk = false
     private var markedFirstEnqueue = false
+    private var diagnosticChunks = 0
+    private var diagnosticPeak: Float = 0
+    private var diagnosticMaxVAD: Float = 0
 
     public init(
         vad: VoiceActivityDetecting,
@@ -77,7 +82,14 @@ public actor ConversationEngine {
 
     public func start() {
         guard state == .idle else { return }
+        turnTaker = TurnTaker(config: config)
+        preRoll.removeAll(keepingCapacity: true)
+        turnAudio.removeAll(keepingCapacity: true)
+        diagnosticChunks = 0
+        diagnosticPeak = 0
+        diagnosticMaxVAD = 0
         vad.reset()
+        Self.log.info("conversation started")
         emit(.state(.listening))
         state = .listening
     }
@@ -93,6 +105,10 @@ public actor ConversationEngine {
         if hadReply { emit(.metrics(recorder.close(footprint: currentFootprintBytes()))) }
         asrActive = false
         duckActive = false
+        turnTaker = TurnTaker(config: config)
+        preRoll.removeAll(keepingCapacity: true)
+        turnAudio.removeAll(keepingCapacity: true)
+        Self.log.info("conversation stopped")
         emit(.state(.idle))
         state = .idle
     }
@@ -103,6 +119,16 @@ public actor ConversationEngine {
         preRoll = Array(preRoll.suffix(max(config.onsetChunks + 2, 4)))
         if asrActive { push(chunk, at: time) }
         let probability = vad.speechProbability(chunk)
+        diagnosticChunks += 1
+        diagnosticPeak = max(diagnosticPeak, chunk.reduce(Float.zero) { max($0, abs($1)) })
+        diagnosticMaxVAD = max(diagnosticMaxVAD, probability)
+        if diagnosticChunks >= 64 {
+            let lagMilliseconds = (now() - time) * 1_000
+            Self.log.info("mic: 64 chunks; peak=\(self.diagnosticPeak) maxVAD=\(self.diagnosticMaxVAD) lagMs=\(lagMilliseconds)")
+            diagnosticChunks = 0
+            diagnosticPeak = 0
+            diagnosticMaxVAD = 0
+        }
         process(turnTaker.process(.vad(probability, at: time)), at: time)
     }
 
@@ -144,6 +170,7 @@ public actor ConversationEngine {
     }
 
     private func startUserTurn(at onset: TimeInterval) {
+        Self.log.info("speech detected; starting transcription")
         let shouldMerge = lastTurnEndedAt.map { onset - $0 < mergeWindow } ?? false
         if shouldMerge, let prior = history.lastIndex(where: { $0.role == .user }) {
             mergePrefix = history[prior].text
@@ -175,10 +202,12 @@ public actor ConversationEngine {
 
     private func finishASR(at time: TimeInterval, allowance: TimeInterval) {
         guard asrActive else { return }
+        Self.log.info("turn ended; finalizing transcription; silenceSeconds=\(allowance)")
         asrActive = false
         lastTurnEndedAt = time
         do {
             let final = try asr.finish().trimmingCharacters(in: .whitespacesAndNewlines)
+            Self.log.info("transcription finalized; characters=\(final.count)")
             recorder.mark(.turnEnded(silenceAllowance: allowance), at: time)
             recorder.mark(.asrFinal, at: now())
             guard !final.isEmpty else { emit(.state(.listening)); state = .listening; return }
@@ -191,6 +220,7 @@ public actor ConversationEngine {
 
     private func beginFinishedTurn(_ text: String, at time: TimeInterval, merge: Bool) {
         let language = LanguagePolicy.replyLanguage(for: text, setting: setting)
+        Self.log.info("generating reply; language=\(language.rawValue, privacy: .public)")
         history.append(ChatTurn(role: .user, text: text))
         let retained = Array(history.suffix(maxHistoryTurns))
         emit(.state(.thinking))
@@ -210,7 +240,11 @@ public actor ConversationEngine {
         do {
             for try await chunk in tutor.reply(system: TutorPrompt.system(for: language), history: history) {
                 guard !Task.isCancelled, replyID == id else { return }
-                if !sawToken { sawToken = true; recorder.mark(.llmFirstToken, at: now()) }
+                if !sawToken {
+                    sawToken = true
+                    recorder.mark(.llmFirstToken, at: now())
+                    Self.log.info("first reply token")
+                }
                 try await speak(parser.feed(chunk), id: id, language: language)
             }
             guard !Task.isCancelled, replyID == id else { return }
@@ -237,6 +271,7 @@ public actor ConversationEngine {
                         if !markedTTSFirstChunk {
                             recorder.mark(.ttsFirstChunk, at: now())
                             markedTTSFirstChunk = true
+                            Self.log.info("first synthesized audio")
                         }
                         enqueued = true
                     }
@@ -295,6 +330,7 @@ public actor ConversationEngine {
 
     private func fail(_ error: Error, id: UUID? = nil) {
         guard id == nil || replyID == id else { return }
+        Self.log.error("conversation error: \(error.localizedDescription, privacy: .public)")
         let hadReply = replyID != nil
         replyTask?.cancel()
         replyTask = nil

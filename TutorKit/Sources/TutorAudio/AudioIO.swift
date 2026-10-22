@@ -18,7 +18,7 @@ public final class AudioIO: AudioOutput, @unchecked Sendable {
     public static let chunkSize = 512
     public static let duckedVolume: Float = 0.15
 
-    /// Called with 512 samples at 16 kHz and `ProcessInfo.systemUptime` when they were captured.
+    /// Called with 512 samples at 16 kHz and their sample-clock time in system uptime seconds.
     public var onMicChunk: ((_ chunk16k: [Float], _ time: TimeInterval) -> Void)? {
         get { state.withLock { $0.onMicChunk } }
         set { state.withLock { $0.onMicChunk = newValue } }
@@ -27,6 +27,7 @@ public final class AudioIO: AudioOutput, @unchecked Sendable {
     private struct State {
         var onMicChunk: ((_ chunk16k: [Float], _ time: TimeInterval) -> Void)?
         var accumulator = ChunkAccumulator(size: AudioIO.chunkSize)
+        var chunkClock = MicChunkClock()
         var converter: AVAudioConverter?
         var sourceMonoFormat: AVAudioFormat?
         var playback = PlaybackTracker()
@@ -98,6 +99,7 @@ public final class AudioIO: AudioOutput, @unchecked Sendable {
             $0.isRunning = false
             $0.playback.reset()
             $0.accumulator = ChunkAccumulator(size: AudioIO.chunkSize)
+            $0.chunkClock = MicChunkClock()
         }
     }
 
@@ -158,6 +160,7 @@ public final class AudioIO: AudioOutput, @unchecked Sendable {
             $0.converter = converter
             $0.sourceMonoFormat = monoSource
             $0.accumulator = ChunkAccumulator(size: AudioIO.chunkSize)
+            $0.chunkClock = MicChunkClock()
         }
         input.installTap(onBus: 0, bufferSize: 1024, format: hardwareFormat) { [weak self] buffer, _ in
             self?.handleMic(buffer, capturedAt: ProcessInfo.processInfo.systemUptime)
@@ -192,10 +195,13 @@ public final class AudioIO: AudioOutput, @unchecked Sendable {
         let samples = Array(UnsafeBufferPointer(start: data[0], count: Int(converted.frameLength)))
 
         let (chunks, callback) = state.withLock { state in
-            (state.accumulator.append(samples), state.onMicChunk)
+            let chunks = state.accumulator.append(samples).map { chunk in
+                (chunk, state.chunkClock.next(capturedAt: time))
+            }
+            return (chunks, state.onMicChunk)
         }
         guard let callback else { return }
-        for chunk in chunks { callback(chunk, time) }
+        for (chunk, capturedAt) in chunks { callback(chunk, capturedAt) }
     }
 
     private func restartAfterConfigurationChange() {

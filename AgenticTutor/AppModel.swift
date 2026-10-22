@@ -208,6 +208,7 @@ final class AppModel {
     private func handle(_ event: ConversationEvent) {
         switch event {
         case let .state(newState):
+            Self.log.info("conversation state: \(String(describing: newState), privacy: .public)")
             state = newState
             if newState == .thinking {
                 tutorCaption = ""
@@ -221,6 +222,7 @@ final class AppModel {
             expression = text
         case let .metrics(metrics):
             lastMetrics = metrics
+            Self.log.info("turn timings: \(String(describing: metrics), privacy: .public)")
         case let .error(message):
             errorMessage = message
         }

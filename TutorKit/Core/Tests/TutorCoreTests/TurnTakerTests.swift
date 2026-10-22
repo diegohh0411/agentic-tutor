@@ -30,6 +30,25 @@ private func lastCheckTime(in output: [TurnOutput]) -> TimeInterval? {
     #expect(output == [.userSpeechStarted(at: 0)])
 }
 
+@Test func onsetSurvivesMicrophoneCallbackJitter() {
+    var turnTaker = TurnTaker()
+    #expect(turnTaker.process(.vad(0.9, at: 100)).isEmpty)
+    #expect(turnTaker.process(.vad(0.9, at: 100.0335)) == [.userSpeechStarted(at: 100)])
+}
+
+@Test func onsetSurvivesChunksDeliveredInOneCallback() {
+    var turnTaker = TurnTaker()
+    #expect(turnTaker.process(.vad(0.9, at: 100)).isEmpty)
+    #expect(turnTaker.process(.vad(0.9, at: 100)) == [.userSpeechStarted(at: 100)])
+}
+
+@Test func onsetDoesNotJoinSpeechAcrossACaptureGap() {
+    var turnTaker = TurnTaker()
+    #expect(turnTaker.process(.vad(0.9, at: 100)).isEmpty)
+    #expect(turnTaker.process(.vad(0.9, at: 101)).isEmpty)
+    #expect(turnTaker.process(.vad(0.9, at: 101.032)) == [.userSpeechStarted(at: 101)])
+}
+
 @Test func pauseTriggersCheckAfter400ms() {
     var turnTaker = TurnTaker()
     _ = feed([0.9, 0.9], from: 0, into: &turnTaker)

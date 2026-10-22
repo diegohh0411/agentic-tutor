@@ -3,6 +3,17 @@ import Testing
 import TutorCore
 
 struct AudioIOTests {
+    @Test func chunkTimesFollowSamplesAcrossBatchedAndJitteryCallbacks() {
+        var clock = MicChunkClock()
+        let times = [100.0, 100.0, 100.071, 100.095].map { clock.next(capturedAt: $0) }
+        for (index, time) in times.enumerated() {
+            #expect(abs(time - (100 + Double(index) * 0.032)) < 1e-9)
+        }
+        // A new capture session starts on the current uptime, without the old offset.
+        clock = MicChunkClock()
+        #expect(clock.next(capturedAt: 200) == 200)
+    }
+
     @Test func countsOnlyChunksAboveTheThreshold() {
         let vad = ScriptedVAD(probabilities: [0.1, 0.9, 0.5, 0.51, 0.99])
         let counter = EchoSelfTest.Counter(vad: vad)
