@@ -14,6 +14,8 @@ let package = Package(
         .package(url: "https://github.com/soniqo/speech-swift.git", exact: "0.0.28"),
         .package(url: "https://github.com/ml-explore/mlx-swift-lm", exact: "3.31.4"),
         .package(url: "https://github.com/gradium-ai/xn-ptts.git", exact: "0.4.0"),
+        .package(url: "https://github.com/huggingface/swift-huggingface.git", exact: "1.0.0"),
+        .package(url: "https://github.com/huggingface/swift-transformers", exact: "1.3.5"),
     ],
     targets: [
         .target(
@@ -28,7 +30,10 @@ let package = Package(
                 .product(name: "NemotronStreamingASR", package: "speech-swift"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+                .product(name: "MLXHuggingFace", package: "mlx-swift-lm"),
                 .product(name: "ptts", package: "xn-ptts"),
+                .product(name: "HuggingFace", package: "swift-huggingface"),
+                .product(name: "Tokenizers", package: "swift-transformers"),
             ]
         ),
         .target(name: "TutorAudio", dependencies: [.product(name: "TutorCore", package: "Core")]),
