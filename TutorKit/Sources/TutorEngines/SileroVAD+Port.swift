@@ -15,8 +15,17 @@ public final class SileroVAD: VoiceActivityDetecting {
     }
 
     /// Downloads (on first use) and loads Silero's Core ML model.
-    public static func load() async throws -> SileroVAD {
-        let model = try await SileroVADModel.fromPretrained(engine: .coreml)
+    ///
+    /// With `offline` the cached copy is loaded without contacting the network.
+    public static func load(
+        offline: Bool = false,
+        progress: (@Sendable (Double) -> Void)? = nil
+    ) async throws -> SileroVAD {
+        let model = try await SileroVADModel.fromPretrained(
+            engine: .coreml,
+            offlineMode: offline,
+            progressHandler: progress.map { report in { fraction, _ in report(fraction) } }
+        )
         return SileroVAD(model: model)
     }
 

@@ -1,3 +1,4 @@
+import AudioCommon
 import Foundation
 import NemotronStreamingASR
 import TutorCore
@@ -36,8 +37,26 @@ public final class NemotronTranscriber: StreamingTranscribing {
     }
 
     /// Downloads (on first use), loads, and warms Nemotron's Core ML INT8 model.
-    public static func load() async throws -> NemotronTranscriber {
-        let model = try await NemotronStreamingASRModel.fromPretrained()
+    ///
+    /// `fromPretrained` always asks the Hub for a manifest, even when the model is cached,
+    /// so with `offline` the cached directory is loaded through `fromLocal` instead.
+    public static func load(
+        offline: Bool = false,
+        progress: (@Sendable (Double) -> Void)? = nil
+    ) async throws -> NemotronTranscriber {
+        let report: ((Double, String) -> Void)? = progress.map { report in { fraction, _ in report(fraction) } }
+        let model: NemotronStreamingASRModel
+        if offline {
+            let cacheDirectory = try HuggingFaceDownloader.getCacheDirectory(
+                for: NemotronStreamingASRModel.defaultModelId)
+            guard HuggingFaceDownloader.weightsExist(in: cacheDirectory) else {
+                throw NemotronTranscriberError.notCached(cacheDirectory.path)
+            }
+            model = try await NemotronStreamingASRModel.fromLocal(
+                bundleDir: cacheDirectory, progressHandler: report)
+        } else {
+            model = try await NemotronStreamingASRModel.fromPretrained(progressHandler: report)
+        }
         try model.warmUp()
         return NemotronTranscriber(model: model)
     }
@@ -82,11 +101,14 @@ public final class NemotronTranscriber: StreamingTranscribing {
 
 private enum NemotronTranscriberError: LocalizedError {
     case noActiveSession
+    case notCached(String)
 
     var errorDescription: String? {
         switch self {
         case .noActiveSession:
             "Call begin(language:) before pushing or finishing a transcription session."
+        case .notCached(let path):
+            "The speech recognition model is not installed at \(path)."
         }
     }
 }

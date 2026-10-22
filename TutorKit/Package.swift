@@ -26,6 +26,7 @@ let package = Package(
             name: "TutorEngines",
             dependencies: [
                 .product(name: "TutorCore", package: "Core"),
+                .product(name: "AudioCommon", package: "speech-swift"),
                 .product(name: "SpeechVAD", package: "speech-swift"),
                 .product(name: "NemotronStreamingASR", package: "speech-swift"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),

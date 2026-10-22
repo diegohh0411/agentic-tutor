@@ -13,8 +13,16 @@ public final class SmartTurnJudge: TurnCompletionJudging {
     }
 
     /// Downloads (on first use), loads, and warms the Smart Turn Core ML graph.
-    public static func load() async throws -> SmartTurnJudge {
-        let model = try await SmartTurnModel.fromPretrained()
+    ///
+    /// With `offline` the cached copy is loaded without contacting the network.
+    public static func load(
+        offline: Bool = false,
+        progress: (@Sendable (Double) -> Void)? = nil
+    ) async throws -> SmartTurnJudge {
+        let model = try await SmartTurnModel.fromPretrained(
+            offlineMode: offline,
+            progressHandler: progress.map { report in { fraction, _ in report(fraction) } }
+        )
         try model.prewarm()
         return SmartTurnJudge(model: model)
     }
