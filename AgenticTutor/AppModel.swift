@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Observation
+import os
 import TutorAudio
 import TutorCore
 import TutorEngines
@@ -13,6 +14,7 @@ final class AppModel {
         case failed(String)
     }
 
+    private static let log = Logger(subsystem: "AgenticTutor", category: "app")
     private static let languageKey = "language"
     private static let echoProbePhrase = "This is a short echo test. One, two, three."
 
@@ -68,25 +70,23 @@ final class AppModel {
         wasInstalledAtLaunch = ModelInstaller.isInstalled
         phase = .setup(progress: 0, title: ModelInstaller.steps.first?.title ?? "")
 
-        let (updates, continuation) = AsyncStream.makeStream(
-            of: (Double, String).self, bufferingPolicy: .bufferingNewest(1))
-        let progressTask = Task { [weak self] in
-            for await (fraction, title) in updates {
-                self?.phase = .setup(progress: fraction, title: title)
-            }
+        // Progress is relayed in order and fully drained before the phase changes, so a late
+        // update can never overwrite `.ready` or `.failed`.
+        let relay = ProgressRelay { [weak self] fraction, title in
+            self?.phase = .setup(progress: fraction, title: title)
         }
-        defer {
-            continuation.finish()
-            progressTask.cancel()
-        }
-
         do {
-            engines = try await ModelInstaller.loadAll(bundledPhonon: phononModels) { fraction, title in
-                continuation.yield((fraction, title))
+            let loaded = try await ModelInstaller.loadAll(bundledPhonon: phononModels) { fraction, title in
+                relay.report(fraction, title)
             }
+            await relay.finish()
+            engines = loaded
             phase = .ready
+            Self.log.info("models loaded; phase is ready")
         } catch {
+            await relay.finish()
             phase = .failed(error.localizedDescription)
+            Self.log.error("model load failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 

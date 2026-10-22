@@ -43,3 +43,31 @@ struct InstallerTests {
         #expect(!ModelInstaller.isInstalled(markerURL: marker))
     }
 }
+
+struct StepTimeoutTests {
+    @Test func stuckStepFailsWithItsTitle() async {
+        do {
+            _ = try await withStepTimeout(title: "Voice", seconds: 0.2) {
+                // Ignores cancellation, like a blocking model load.
+                await withCheckedContinuation { (_: CheckedContinuation<Int, Never>) in }
+            }
+            Issue.record("expected a timeout")
+        } catch {
+            #expect(error.localizedDescription == "Voice did not finish")
+        }
+    }
+
+    @Test func finishedStepReturnsItsValueAndErrorsPropagate() async throws {
+        let value = try await withStepTimeout(title: "Tutor", seconds: 5) { 42 }
+        #expect(value == 42)
+        struct Boom: Error {}
+        await #expect(throws: Boom.self) {
+            try await withStepTimeout(title: "Tutor", seconds: 5) { throw Boom() }
+        }
+    }
+
+    @Test func noLimitRunsTheWorkDirectly() async throws {
+        let value = try await withStepTimeout(title: "Tutor", seconds: nil) { "ok" }
+        #expect(value == "ok")
+    }
+}

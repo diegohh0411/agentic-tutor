@@ -1,4 +1,5 @@
 import Foundation
+import os
 import TutorCore
 
 /// The engines the app needs for a conversation, loaded and warmed.
@@ -60,6 +61,8 @@ public enum ModelInstaller {
                 progress(1, steps.last?.title ?? "")
                 return engines
             } catch {
+                // A stuck step is reported as is; only a missing cache falls back to downloading.
+                if case InstallerError.stepTimedOut = error { throw error }
                 guard offline else { throw error }
                 try? FileManager.default.removeItem(at: markerURL)
                 offline = false
@@ -111,30 +114,105 @@ public enum ModelInstaller {
 
     // MARK: - Loading
 
+    private static let log = Logger(subsystem: "AgenticTutor", category: "installer")
+
+    /// How long an already-installed model may take to load before the step is reported as stuck.
+    /// Downloads have no limit because their duration depends on the connection.
+    static let installedStepTimeout: TimeInterval = 120
+
     private static func load(
         bundledPhonon: URL,
         offline: Bool,
         progress: @escaping @Sendable (Double, String) -> Void
     ) async throws -> LoadedEngines {
         let steps = steps
-        func report(_ index: Int) -> @Sendable (Double) -> Void {
+        let timeout: TimeInterval? = offline ? installedStepTimeout : nil
+        @Sendable func report(_ index: Int) -> @Sendable (Double) -> Void {
             { fraction in
                 progress(overallFraction(stepIndex: index, stepFraction: fraction, steps: steps), steps[index].title)
             }
         }
-        func started(_ index: Int) { report(index)(0) }
+        func step<T>(_ index: Int, _ work: @escaping @Sendable () async throws -> T) async throws -> T {
+            let title = steps[index].title
+            report(index)(0)
+            log.info("load start: \(title, privacy: .public) (offline: \(offline))")
+            let began = Date()
+            do {
+                let result = try await withStepTimeout(title: title, seconds: timeout, work)
+                log.info("load done: \(title, privacy: .public) in \(Date().timeIntervalSince(began), format: .fixed(precision: 2)) s")
+                return result
+            } catch {
+                log.error("load failed: \(title, privacy: .public) after \(Date().timeIntervalSince(began), format: .fixed(precision: 2)) s: \(error.localizedDescription, privacy: .public)")
+                throw error
+            }
+        }
 
-        started(0)
-        let vad = try await SileroVAD.load(offline: offline, progress: report(0))
-        started(1)
-        let judge = try await SmartTurnJudge.load(offline: offline, progress: report(1))
-        started(2)
-        let asr = try await NemotronTranscriber.load(offline: offline, progress: report(2))
-        started(3)
-        let tutor = try await QwenTutor.load(
-            modelId: currentTutorModelId, localFilesOnly: offline, progress: report(3))
-        started(4)
-        let tts = try await PhononSpeaker.load(bundledModels: bundledPhonon)
+        let modelId = currentTutorModelId
+        let vad = try await step(0) { Unchecked(try await SileroVAD.load(offline: offline, progress: report(0))) }.value
+        let judge = try await step(1) { Unchecked(try await SmartTurnJudge.load(offline: offline, progress: report(1))) }.value
+        let asr = try await step(2) { Unchecked(try await NemotronTranscriber.load(offline: offline, progress: report(2))) }.value
+        let tutor = try await step(3) {
+            Unchecked(try await QwenTutor.load(modelId: modelId, localFilesOnly: offline, progress: report(3)))
+        }.value
+        let tts = try await step(4) { Unchecked(try await PhononSpeaker.load(bundledModels: bundledPhonon)) }.value
         return LoadedEngines(vad: vad, judge: judge, asr: asr, tutor: tutor, tts: tts)
+    }
+}
+
+/// Carries a non-Sendable engine out of the task that loaded it.
+struct Unchecked<Value>: @unchecked Sendable {
+    let value: Value
+    init(_ value: Value) { self.value = value }
+}
+
+enum InstallerError: LocalizedError {
+    case stepTimedOut(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .stepTimedOut(let title): "\(title) did not finish"
+        }
+    }
+}
+
+/// Runs `work`, failing with `InstallerError.stepTimedOut` if it has not finished after `seconds`.
+///
+/// The work runs in its own task. If it is stuck in non-cancellable code, the timeout still
+/// returns to the caller (the stuck task is abandoned), which a task group would not allow.
+func withStepTimeout<T: Sendable>(
+    title: String,
+    seconds: TimeInterval?,
+    _ work: @escaping @Sendable () async throws -> T
+) async throws -> T {
+    guard let seconds else { return try await work() }
+    return try await withCheckedThrowingContinuation { continuation in
+        let once = OnceFlag()
+        let worker = Task {
+            do {
+                let value = try await work()
+                if once.claim() { continuation.resume(returning: value) }
+            } catch {
+                if once.claim() { continuation.resume(throwing: error) }
+            }
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(seconds))
+            if once.claim() {
+                worker.cancel()
+                continuation.resume(throwing: InstallerError.stepTimedOut(title))
+            }
+        }
+    }
+}
+
+private final class OnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+
+    func claim() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if claimed { return false }
+        claimed = true
+        return true
     }
 }

@@ -29,8 +29,7 @@ public final class AudioIO: AudioOutput, @unchecked Sendable {
         var accumulator = ChunkAccumulator(size: AudioIO.chunkSize)
         var converter: AVAudioConverter?
         var sourceMonoFormat: AVAudioFormat?
-        var pendingBuffers = 0
-        var generation = 0
+        var playback = PlaybackTracker()
         var isRunning = false
     }
 
@@ -97,8 +96,7 @@ public final class AudioIO: AudioOutput, @unchecked Sendable {
         engine.stop()
         state.withLock {
             $0.isRunning = false
-            $0.generation += 1
-            $0.pendingBuffers = 0
+            $0.playback.reset()
             $0.accumulator = ChunkAccumulator(size: AudioIO.chunkSize)
         }
     }
@@ -114,15 +112,12 @@ public final class AudioIO: AudioOutput, @unchecked Sendable {
         samples24k.withUnsafeBufferPointer { channel.update(from: $0.baseAddress!, count: samples24k.count) }
         buffer.frameLength = AVAudioFrameCount(samples24k.count)
 
-        let generation = state.withLock { state -> Int in
-            state.pendingBuffers += 1
-            return state.generation
+        let duration = Double(samples24k.count) / Self.playbackSampleRate
+        let generation = state.withLock {
+            $0.playback.enqueue(duration: duration, now: ProcessInfo.processInfo.systemUptime)
         }
         player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-            self?.state.withLock { state in
-                // Buffers dropped by stopAll() complete too; only count the current generation.
-                if state.generation == generation { state.pendingBuffers -= 1 }
-            }
+            self?.state.withLock { $0.playback.completed(generation: generation) }
         }
     }
 
@@ -130,17 +125,17 @@ public final class AudioIO: AudioOutput, @unchecked Sendable {
     public func unduck() { player.volume = 1 }
 
     public func stopAll() {
-        state.withLock {
-            $0.generation += 1
-            $0.pendingBuffers = 0
-        }
+        state.withLock { $0.playback.reset() }
         player.stop()
         player.volume = 1
         if isRunning { player.play() }
     }
 
-    /// True while any enqueued audio has not finished playing.
-    public var isPlaying: Bool { state.withLock { $0.pendingBuffers > 0 } }
+    /// True while enqueued audio is still playing, bounded by the audio's expected duration plus
+    /// a grace period so a player that never reports completion cannot stall the conversation.
+    public var isPlaying: Bool {
+        state.withLock { $0.playback.isPlaying(now: ProcessInfo.processInfo.systemUptime) }
+    }
 
     public var outputLatency: TimeInterval { engine.outputNode.presentationLatency }
 
