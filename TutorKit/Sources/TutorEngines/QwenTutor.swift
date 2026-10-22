@@ -1,4 +1,4 @@
-import MLXHuggingFace
+import Foundation
 import MLXLLM
 import MLXLMCommon
 import TutorCore
@@ -9,6 +9,9 @@ import TutorCore
 /// supplies the complete capped history on every call. This avoids appending
 /// that history to a session cache a second time.
 public final class QwenTutor: TutorGenerating, @unchecked Sendable {
+    public static let temperature: Float = 0.6
+    public static let maxTokens = 300
+
     private let modelContainer: ModelContainer
 
     private init(modelContainer: ModelContainer) {
@@ -16,20 +19,29 @@ public final class QwenTutor: TutorGenerating, @unchecked Sendable {
     }
 
     /// Downloads the model on first use, then loads it for local MLX inference.
-    public static func load(modelId: String) async throws -> QwenTutor {
-        // In mlx-swift-lm 3.31.4 this macro expands to the package's default
-        // Hugging Face downloader and tokenizer loader.
-        let modelContainer = try await #huggingFaceLoadModelContainer(
-            configuration: ModelConfiguration(id: modelId)
+    ///
+    /// With `localFilesOnly` the model is resolved from the on-disk Hugging Face cache and the
+    /// network is never contacted. (Without it, a "main" revision is always checked against
+    /// the Hub first, even when cached.)
+    public static func load(
+        modelId: String,
+        localFilesOnly: Bool = false,
+        progress: @escaping @Sendable (Double) -> Void = { _ in }
+    ) async throws -> QwenTutor {
+        let container = try await loadModelContainer(
+            from: HubModelDownloader(localFilesOnly: localFilesOnly),
+            using: HubTokenizerLoader(),
+            id: modelId,
+            progressHandler: { progress($0.fractionCompleted) }
         )
-        return QwenTutor(modelContainer: modelContainer)
+        return QwenTutor(modelContainer: container)
     }
 
     public func reply(
         system: String,
         history: [ChatTurn]
     ) -> AsyncThrowingStream<String, Error> {
-        let messages: [Chat.Message] = [.system(system)] + history.map { turn in
+        let messages: [Chat.Message] = history.map { turn in
             switch turn.role {
             case .user:
                 .user(turn.text)
@@ -39,7 +51,8 @@ public final class QwenTutor: TutorGenerating, @unchecked Sendable {
         }
         let session = ChatSession(
             modelContainer,
-            generateParameters: GenerateParameters(maxTokens: 300, temperature: 0.6),
+            instructions: system,
+            generateParameters: GenerateParameters(maxTokens: Self.maxTokens, temperature: Self.temperature),
             additionalContext: ["enable_thinking": false]
         )
 

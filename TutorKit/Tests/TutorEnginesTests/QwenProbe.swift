@@ -12,6 +12,11 @@ struct QwenProbe {
         #expect(prompts.spanish.count == 20)
 
         let tutor = try await QwenTutor.load(modelId: ModelCatalog.tutorModelId)
+        // Warm-up so the first measured prompt does not pay for Metal kernel compilation.
+        for try await _ in tutor.reply(
+            system: TutorPrompt.system(for: .english),
+            history: [.init(role: .user, text: "Hello")]
+        ) {}
         var results: [QwenProbeResult] = []
 
         for (language, languagePrompts) in [
@@ -119,24 +124,35 @@ private func qwenProbeWriteResponses(_ results: [QwenProbeResult]) throws {
 }
 
 private func qwenProbeAppendResults(_ results: [QwenProbeResult]) throws {
-    var table = """
-
-    ## Qwen tutor probe
-
-    | Language | Prompt | TTFT | Tokens/s |
-    | --- | --- | ---: | ---: |
-    """
-    table += "\n"
+    let heading = "## Qwen tutor probe"
+    var section = "\(heading)\n\n"
+    section += "Model \(ModelCatalog.tutorModelId), temperature 0.6, max 300 tokens, thinking disabled. "
+    section += "Tokens/s is generated tokens over the time after the first token.\n\n"
+    section += "| Language | Prompt | TTFT | Tokens/s |\n| --- | --- | ---: | ---: |\n"
     for result in results {
-        table += String(
-            format: "| %@ | %@ | %.3f s | %.2f |\\n",
+        section += String(
+            format: "| %@ | %@ | %.3f s | %.2f |\n",
             result.language.rawValue,
             qwenProbeMarkdown(result.prompt),
             result.timeToFirstToken,
             result.tokensPerSecond
         )
     }
-    try qwenProbeAppend(table, to: qwenProbeRepositoryRoot().appendingPathComponent("docs/spike/results.md"))
+    section += String(
+        format: "\nMedian TTFT %.3f s; median tokens/s %.2f.\n",
+        qwenProbeMedian(results.map(\.timeToFirstToken)),
+        qwenProbeMedian(results.map(\.tokensPerSecond))
+    )
+
+    // Replace the previous run's section so re-running the probe stays idempotent.
+    let url = qwenProbeRepositoryRoot().appendingPathComponent("docs/spike/results.md")
+    var existing = (try? String(contentsOf: url, encoding: .utf8)) ?? "# Spike results\n"
+    if let start = existing.range(of: heading) {
+        let end = existing[start.upperBound...].range(of: "\n## ")?.lowerBound ?? existing.endIndex
+        existing.removeSubrange(start.lowerBound..<end)
+    }
+    existing = existing.trimmingCharacters(in: .newlines) + "\n\n" + section
+    try existing.write(to: url, atomically: true, encoding: .utf8)
 }
 
 private func qwenProbeMedian(_ values: [TimeInterval]) -> TimeInterval {
@@ -149,17 +165,6 @@ private func qwenProbeMedian(_ values: [TimeInterval]) -> TimeInterval {
 
 private func qwenProbeMarkdown(_ text: String) -> String {
     text.replacingOccurrences(of: "|", with: "\\|").replacingOccurrences(of: "\n", with: " ")
-}
-
-private func qwenProbeAppend(_ text: String, to url: URL) throws {
-    let fileManager = FileManager.default
-    if !fileManager.fileExists(atPath: url.path) {
-        try "# Spike results\n".write(to: url, atomically: true, encoding: .utf8)
-    }
-    let handle = try FileHandle(forWritingTo: url)
-    defer { try? handle.close() }
-    try handle.seekToEnd()
-    try handle.write(contentsOf: Data(text.utf8))
 }
 
 private func qwenProbeRepositoryRoot() -> URL {

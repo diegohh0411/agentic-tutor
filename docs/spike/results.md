@@ -12,6 +12,10 @@
 | es-09 | 0.990 | 0.949 | — |
 | es-10 | 0.987 | 0.979 | — |
 
+## Phonon probe
+
+| Engine | Voice | Language | Time to first chunk | Real-time factor |
+| --- | --- | --- | ---: | ---: |
 | Phonon | NbpkqMVS3CJeq2j8 | en | 0.038 s | 32.69 |
 | Phonon | Sx8m6WdXBG06zwZT | es | 0.026 s | 34.57 |
 
@@ -43,3 +47,52 @@
 Mean en WER: 0.000.
 
 Mean es WER: 0.045.
+
+## Qwen tutor probe
+
+Model mlx-community/Qwen3.5-4B-4bit, temperature 0.6, max 300 tokens, thinking disabled. Tokens/s is generated tokens over the time after the first token.
+
+| Language | Prompt | TTFT | Tokens/s |
+| --- | --- | ---: | ---: |
+| en | What is seven times eight? | 0.155 s | 44.15 |
+| en | Can you help me subtract forty-seven from ninety-two? | 0.166 s | 43.67 |
+| en | I think eighteen plus twenty-seven is thirty-five. | 0.164 s | 44.09 |
+| en | How can I divide eighty-four by six? | 0.163 s | 42.74 |
+| en | How can I check whether sixty-three divided by nine is correct? | 0.163 s | 41.65 |
+| en | What does the six mean in four thousand six hundred seventy-two? | 0.165 s | 40.91 |
+| en | Which is greater: five thousand ninety or five thousand nine hundred? | 0.167 s | 41.08 |
+| en | I think one half plus one third is two fifths. | 0.166 s | 39.77 |
+| en | How can I compare three fourths and two thirds? | 0.166 s | 39.09 |
+| en | What is two point five plus zero point seven? | 0.165 s | 40.36 |
+| en | Why is zero point forty-five less than zero point five? | 0.166 s | 39.98 |
+| en | How many sides does a hexagon have? | 0.165 s | 39.19 |
+| en | How do I find the area of a rectangle that is eight units long and three units wide? | 0.194 s | 35.73 |
+| en | I think a square with side length four has area eight. | 0.169 s | 35.30 |
+| en | How is perimeter different from area for a rectangle? | 0.171 s | 35.55 |
+| en | What number comes next: two, five, eight, eleven? | 0.174 s | 35.87 |
+| en | The pattern is three, six, nine, twelve. What is the rule? | 0.186 s | 34.83 |
+| en | If a rule doubles a number and then adds one, what happens to four? | 0.160 s | 34.62 |
+| en | In a table, x is one, two, three and y is four, seven, ten. What pattern do you see? | 0.197 s | 33.19 |
+| en | Can you help me make a number pattern that adds five each time? | 0.170 s | 33.22 |
+| es | ¿Cuánto es siete por ocho? | 0.226 s | 32.25 |
+| es | ¿Me ayudas a restar cuarenta y siete de noventa y dos? | 0.227 s | 31.06 |
+| es | Creo que dieciocho más veintisiete es treinta y cinco. | 0.230 s | 30.16 |
+| es | ¿Cómo puedo dividir ochenta y cuatro entre seis? | 0.218 s | 29.58 |
+| es | ¿Cómo puedo comprobar si sesenta y tres entre nueve está correcto? | 0.235 s | 28.29 |
+| es | ¿Qué valor tiene el seis en cuatro mil seiscientos setenta y dos? | 0.227 s | 28.64 |
+| es | ¿Cuál es mayor: cinco mil noventa o cinco mil novecientos? | 0.220 s | 29.67 |
+| es | Creo que un medio más un tercio es dos quintos. | 0.226 s | 29.64 |
+| es | ¿Cómo puedo comparar tres cuartos y dos tercios? | 0.233 s | 29.19 |
+| es | ¿Cuánto es dos punto cinco más cero punto siete? | 0.238 s | 28.91 |
+| es | ¿Por qué cero punto cuarenta y cinco es menor que cero punto cinco? | 0.238 s | 29.17 |
+| es | ¿Cuántos lados tiene un hexágono? | 0.221 s | 28.38 |
+| es | ¿Cómo saco el área de un rectángulo de ocho unidades de largo y tres de ancho? | 0.227 s | 27.98 |
+| es | Creo que un cuadrado de lado cuatro tiene área de ocho. | 0.224 s | 27.68 |
+| es | ¿Qué diferencia hay entre el perímetro y el área de un rectángulo? | 0.222 s | 27.53 |
+| es | ¿Qué número sigue: dos, cinco, ocho, once? | 0.228 s | 27.74 |
+| es | La secuencia es tres, seis, nueve, doce. ¿Cuál es la regla? | 0.243 s | 26.30 |
+| es | Si una regla duplica un número y luego suma uno, ¿qué pasa con cuatro? | 0.227 s | 27.87 |
+| es | En una tabla, x es uno, dos, tres y y es cuatro, siete, diez. ¿Qué patrón ves? | 0.234 s | 26.63 |
+| es | ¿Me ayudas a hacer una secuencia que sume cinco cada vez? | 0.225 s | 26.41 |
+
+Median TTFT 0.207 s; median tokens/s 32.72.
